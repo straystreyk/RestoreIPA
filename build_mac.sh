@@ -4,14 +4,18 @@
 #
 #   bash build_mac.sh
 #
-# Нужно: Python 3.12 (python3.12 в PATH или переменная PYTHON), Xcode Command Line Tools (iconutil, codesign, hdiutil).
-# ipatool скачивается из официального релиза на GitHub; сборка останавливается, если не совпал SHA-256.
+# Нужно: Python 3.12 (python3.12 в PATH или переменная PYTHON), Go и Xcode Command Line Tools
+# (iconutil, codesign, hdiutil). ipatool собирается из закреплённого официального commit; исходный архив и
+# результат сборки сверяются по SHA-256.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-IPATOOL_VERSION="2.7.0"
-IPATOOL_SHA_arm64="5ae100d4520cf4b3f4374239e5925a9ad9a8dc02abc16bae27479e7ae99aca33"  # …-macos-arm64.tar.gz.sha256sum
-IPATOOL_SHA_amd64="05f48994d8b3cfefe7ea1172a0ac0b28715888e9df0af38cf3e490d2ed592263"  # …-macos-amd64.tar.gz.sha256sum
+IPATOOL_COMMIT="001d889896fcb118546443c5dfe0997d11b74f56"  # PR #643: новый native auth + Store AMD proofs
+IPATOOL_VERSION="2.8.0-dev.001d889"
+IPATOOL_SOURCE_SHA="8b61a6925409a2fb669be92d83df6bfae7a8ccfbb03f567fe7ec80240934dd11"
+IPATOOL_BIN_SHA_arm64="9410bfe8bec66cbf3bf46402c4e0a53b3024a06278fe02ba1eeafdd313ad16f6"
+IPATOOL_BIN_SHA_amd64="8fe826175b27667058b8e31f72b5aefaf8fd224003f59efb9554fd406b26515b"
+GO_VERSION="1.26.5"
 
 PYTHON="${PYTHON:-python3.12}"
 ARCH="$("$PYTHON" -c 'import platform; print(platform.machine())')"
@@ -44,26 +48,37 @@ fi
 # все пакеты сборки — точные версии с SHA-256 (requirements-lock.txt собран из requirements-build.txt, см. README)
 "$PY" -m pip install --disable-pip-version-check -q --require-hashes -r requirements-lock.txt
 
-# --- ipatool для Mac ---
-mkdir -p build/dl build/res
-TAR="build/dl/ipatool-$IPATOOL_VERSION-macos-$IPA_ARCH.tar.gz"
-SHA_VAR="IPATOOL_SHA_$IPA_ARCH"
-if [ ! -f "$TAR" ] || [ "$(shasum -a 256 "$TAR" | cut -d' ' -f1)" != "${!SHA_VAR}" ]; then
-    echo "Скачиваю ipatool $IPATOOL_VERSION ($IPA_ARCH)"
-    curl -fsSL -o "$TAR" \
-        "https://github.com/majd/ipatool/releases/download/v$IPATOOL_VERSION/ipatool-$IPATOOL_VERSION-macos-$IPA_ARCH.tar.gz"
+# --- ipatool для Mac из официального исходного кода ---
+command -v go >/dev/null || { echo "Не найден Go. Установите: brew install go" >&2; exit 1; }
+ACTUAL_GO="$(GOTOOLCHAIN="go$GO_VERSION" go env GOVERSION)"
+[ "$ACTUAL_GO" = "go$GO_VERSION" ] || { echo "Нужен Go $GO_VERSION, найден $ACTUAL_GO" >&2; exit 1; }
+mkdir -p build/dl build/res build/src
+TAR="build/dl/ipatool-$IPATOOL_COMMIT-source.tar.gz"
+if [ ! -f "$TAR" ] || [ "$(shasum -a 256 "$TAR" | cut -d' ' -f1)" != "$IPATOOL_SOURCE_SHA" ]; then
+    echo "Скачиваю исходники ipatool $IPATOOL_VERSION"
+    curl -fsSL -o "$TAR" "https://github.com/majd/ipatool/archive/$IPATOOL_COMMIT.tar.gz"
 fi
 GOT="$(shasum -a 256 "$TAR" | cut -d' ' -f1)"
-if [ "$GOT" != "${!SHA_VAR}" ]; then
-    echo "SHA-256 не совпал: $TAR"$'\n'"  ожидался ${!SHA_VAR}"$'\n'"  получен  $GOT" >&2
+if [ "$GOT" != "$IPATOOL_SOURCE_SHA" ]; then
+    echo "SHA-256 не совпал: $TAR"$'\n'"  ожидался $IPATOOL_SOURCE_SHA"$'\n'"  получен  $GOT" >&2
     exit 1
 fi
-rm -rf build/dl/ipatool && mkdir -p build/dl/ipatool
-tar -xzf "$TAR" -C build/dl/ipatool
-BIN="$(find build/dl/ipatool -type f -name 'ipatool*' ! -name '*.sha256sum' | head -n 1)"
-[ -n "$BIN" ] || { echo "В архиве ipatool нет программы" >&2; exit 1; }
-cp "$BIN" build/res/ipatool
-chmod +x build/res/ipatool
+rm -rf build/src/ipatool && mkdir -p build/src/ipatool
+tar -xzf "$TAR" -C build/src/ipatool --strip-components=1
+echo "Собираю ipatool $IPATOOL_VERSION ($IPA_ARCH)"
+(
+    cd build/src/ipatool
+    GOTOOLCHAIN="go$GO_VERSION" GOOS=darwin GOARCH="$IPA_ARCH" CGO_ENABLED=1 \
+        CGO_CFLAGS="-mmacosx-version-min=10.15" CGO_LDFLAGS="-mmacosx-version-min=10.15" \
+        go build -buildvcs=false -trimpath \
+        -ldflags="-X=github.com/majd/ipatool/v2/cmd.version=$IPATOOL_VERSION" -o ../../res/ipatool .
+)
+BIN_SHA_VAR="IPATOOL_BIN_SHA_$IPA_ARCH"
+GOT="$(shasum -a 256 build/res/ipatool | cut -d' ' -f1)"
+if [ "$GOT" != "${!BIN_SHA_VAR}" ]; then
+    echo "SHA-256 собранного ipatool не совпал"$'\n'"  ожидался ${!BIN_SHA_VAR}"$'\n'"  получен  $GOT" >&2
+    exit 1
+fi
 build/res/ipatool --version
 
 # --- иконка .icns из того же рисунка, что и icon.ico (installer/make_art.py) ---

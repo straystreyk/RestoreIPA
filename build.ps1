@@ -5,15 +5,20 @@
   powershell -ExecutionPolicy Bypass -File build.ps1 -SkipInstaller  # только exe
 
 Нужно: Python 3.12 (python.org, winget install Python.Python.3.12 или py install 3.12; другой путь — переменная
-PYTHON), для установщика — Inno Setup 6.
-ipatool и Unicorn скачиваются из официальных релизов на GitHub; сборка останавливается, если не совпал SHA-256.
+PYTHON), Go, для установщика — Inno Setup 6.
+ipatool собирается из закреплённого официального commit, Unicorn скачивается из официального релиза; исходники и
+результаты сверяются по SHA-256.
 #>
 param([switch]$SkipInstaller)
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-$IpatoolUrl = "https://github.com/majd/ipatool/releases/download/v2.7.0/ipatool-2.7.0-windows-amd64.tar.gz"
-$IpatoolSha = "b729608716908be287c2e6972f9e8cd05f879810ae5d182fc856c9e57cca0dd5"  # ipatool-2.7.0-windows-amd64.tar.gz.sha256sum
+$IpatoolCommit = "001d889896fcb118546443c5dfe0997d11b74f56"  # PR #643: новый native auth + Store AMD proofs
+$IpatoolVersion = "2.8.0-dev.001d889"
+$IpatoolUrl = "https://github.com/majd/ipatool/archive/$IpatoolCommit.tar.gz"
+$IpatoolSourceSha = "8b61a6925409a2fb669be92d83df6bfae7a8ccfbb03f567fe7ec80240934dd11"
+$IpatoolExeSha = "2d8104e98cf52dc5dde9df3c7a74f28afa28821a606db34239ae2eb2495436ab"
+$GoVersion = "1.26.5"
 $UnicornUrl = "https://github.com/unicorn-engine/unicorn/releases/download/2.1.4/windows-mingw64-shared.7z"
 $UnicornSha = "0960f938e66fa12c448742bddd2a03aa88abeeb2b3cda7156493a2da86228d3a"  # digest ассета в релизе 2.1.4
 $UnicornDllSha = "d8f9a89222ffa74493a1d47090e17f8e1db8ac171a3128c6a76a4ea09de11469"  # = UNICORN_SHA256 в restore_apps_gui.py
@@ -79,13 +84,29 @@ Invoke-Native $py -m pip install --disable-pip-version-check -q --require-hashes
 # --- внешние компоненты ---
 New-Item -ItemType Directory -Force build\dl, build\res | Out-Null
 
-Get-Checked $IpatoolUrl build\dl\ipatool.tar.gz $IpatoolSha
-Remove-Item -Recurse -Force build\dl\ipatool -ErrorAction SilentlyContinue
-New-Item -ItemType Directory build\dl\ipatool | Out-Null
-Invoke-Native tar -xzf build\dl\ipatool.tar.gz -C build\dl\ipatool
-$ipatoolExe = Get-ChildItem build\dl\ipatool -Recurse -Filter "ipatool*.exe" | Select-Object -First 1
-if (-not $ipatoolExe) { throw "В архиве ipatool нет exe" }
-Copy-Item $ipatoolExe.FullName build\res\ipatool.exe -Force
+if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
+    throw "Не найден Go. Установите: winget install GoLang.Go"
+}
+$env:GOTOOLCHAIN = "go$GoVersion"
+$actualGo = (& go env GOVERSION).Trim()
+if ($LASTEXITCODE -or $actualGo -ne "go$GoVersion") { throw "Нужен Go $GoVersion, найден $actualGo" }
+Get-Checked $IpatoolUrl build\dl\ipatool-source.tar.gz $IpatoolSourceSha
+Remove-Item -Recurse -Force build\src\ipatool -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force build\src\ipatool | Out-Null
+Invoke-Native tar -xzf build\dl\ipatool-source.tar.gz -C build\src\ipatool --strip-components=1
+Write-Host "Собираю ipatool $IpatoolVersion (windows-amd64)"
+$env:GOOS = "windows"
+$env:GOARCH = "amd64"
+$env:CGO_ENABLED = "0"
+Push-Location build\src\ipatool
+try {
+    Invoke-Native go build -buildvcs=false -trimpath `
+        "-ldflags=-X=github.com/majd/ipatool/v2/cmd.version=$IpatoolVersion" -o ..\..\res\ipatool.exe .
+} finally {
+    Pop-Location
+}
+Assert-Hash build\res\ipatool.exe $IpatoolExeSha
+Invoke-Native build\res\ipatool.exe --version
 
 Get-Checked $UnicornUrl build\dl\unicorn.7z $UnicornSha
 Remove-Item -Recurse -Force build\dl\unicorn -ErrorAction SilentlyContinue

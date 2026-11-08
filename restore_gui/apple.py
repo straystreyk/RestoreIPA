@@ -27,12 +27,12 @@ SESSION_LOST = re.compile(r"failed to get account|keyring|not logged|sign.?in|pa
 SCAN_ROOT = core.DATA_DIR / "scan"
 UNICORN_VERSION = "2.1.4"
 UNICORN_SHA256 = "d8f9a89222ffa74493a1d47090e17f8e1db8ac171a3128c6a76a4ea09de11469"  # как в исходниках ipatool
-# официальный ipatool 2.7.0 (build.ps1, build_mac.sh): встроенный сверяется с ним перед запуском.
-# На macOS — хеш кода без подписи (ipatool_digest): PyInstaller переподписывает программы внутри .app
+# ipatool 2.8.0-dev из официального commit 001d889 (исправление авторизации #643; build.ps1/build_mac.sh).
+# На macOS — хеш кода без подписи (ipatool_digest): PyInstaller переподписывает программы внутри .app.
 IPATOOL_SHA256 = {
-    "win32-amd64": "7b83589b74ad533f5d5dbab0ca87a5cb76b123bcbeb2553d57e9c154e35d8755",
-    "darwin-arm64": "f64c6ccdd10548ef1f0ad69fd539feeee03831fdb4c18ce5946ebaf7329796df",
-    "darwin-x86_64": "95108a8328021a4cefe415cb38086e81e9a56c180decc9fcb60e2bdea418c249",
+    "win32-amd64": "2d8104e98cf52dc5dde9df3c7a74f28afa28821a606db34239ae2eb2495436ab",
+    "darwin-arm64": "09f1a8121e4b62280db7cbba78493fc9fdf48b9c388a15db3d1b2a8b64801596",
+    "darwin-x86_64": "beb2f110379782dd62c8c7d5698559681cd0bd94795bf55dab19d1c43dfaabb5",
 }
 # адреса, без которых не работает вход/скачивание (для «Проверить связь с Apple»)
 APPLE_HOSTS = (

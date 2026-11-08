@@ -112,7 +112,7 @@ class TasksMixin:
         if path and Path(path).exists():
             # встроенный ipatool запускается, только если совпадает с официальным (apple.IPATOOL_SHA256)
             if name == "ipatool" and core.FROZEN and path == bundled(name) and ipatool_genuine(path) is False:
-                self.log(f"Встроенный ipatool не совпадает с официальным ipatool 2.7.0 (файл изменён): {path}")
+                self.log(f"Встроенный ipatool не совпадает с закреплённой сборкой (файл изменён): {path}")
                 if ask:
                     self.show_notice("ipatool изменён",
                                      "Встроенный ipatool не совпадает с официальным: файл повреждён или изменён, "

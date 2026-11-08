@@ -188,9 +188,9 @@ py -V:3.12 -m unittest discover tests
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-Нужен Python 3.12: с [python.org](https://www.python.org/downloads/), `winget install Python.Python.3.12` или `py install 3.12`. Скрипт находит его сам — через `py`, в `PATH` или в обычной папке установки; другой путь можно указать переменной `PYTHON` (`$env:PYTHON = 'C:\путь\к\python.exe'`). Для установщика нужен [Inno Setup 6](https://jrsoftware.org/isinfo.php), без него — флаг `-SkipInstaller`.
+Нужны Python 3.12 и Go: `winget install Python.Python.3.12 GoLang.Go` (либо Python с [python.org](https://www.python.org/downloads/) / `py install 3.12`). Скрипт находит Python сам — через `py`, в `PATH` или в обычной папке установки; другой путь можно указать переменной `PYTHON` (`$env:PYTHON = 'C:\путь\к\python.exe'`). Для установщика нужен [Inno Setup 6](https://jrsoftware.org/isinfo.php), без него — флаг `-SkipInstaller`.
 
-Скрипт создаёт окружение `build\venv` (Python 3.12, пакеты из `requirements-lock.txt`), скачивает ipatool 2.7.0 и Unicorn 2.1.4 из официальных релизов **со сверкой SHA-256** и прогоняет тесты. Затем собирает (PyInstaller):
+Скрипт создаёт окружение `build\venv` (Python 3.12, пакеты из `requirements-lock.txt`), собирает ipatool 2.8.0-dev из закреплённого официального commit `001d889` (исправление авторизации #643), скачивает Unicorn 2.1.4 и проверяет SHA-256 исходников и бинарных файлов. Затем прогоняет тесты и собирает (PyInstaller):
 - `dist\RestoreAppStore.exe` — портативная версия одним файлом;
 - `dist\RestoreAppStore\` — та же программа папкой, для установщика;
 
@@ -202,7 +202,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 bash build_mac.sh
 ```
 
-Нужны Python 3.12 (`python3.12` в `PATH` или переменная `PYTHON`) и Xcode Command Line Tools (`xcode-select --install`). Скрипт создаёт `build/venv`, скачивает ipatool 2.7.0 для macOS **со сверкой SHA-256**, рисует иконку `.icns`, прогоняет тесты и собирает (PyInstaller):
+Нужны Python 3.12 (`python3.12` в `PATH` или переменная `PYTHON`), Go (`brew install go`) и Xcode Command Line Tools (`xcode-select --install`). Скрипт создаёт `build/venv`, собирает тот же закреплённый ipatool 2.8.0-dev с проверкой SHA-256, рисует иконку `.icns`, прогоняет тесты и собирает (PyInstaller):
 - `dist/Restore.app` — программа с подписью без сертификата (ad-hoc), без неё Apple Silicon её не запустит;
 - `dist/Restore-<версия>-macos-<arm64|intel>.dmg` — образ для установки перетаскиванием и `.sha256` к нему.
 
@@ -216,6 +216,10 @@ OPENSSL_DIR=<папка OpenSSL для x86_64> arch -x86_64 bash build_mac.sh
 
 Окружение `build/venv` у каждой архитектуры своё: перед сборкой для другой архитектуры переименуйте или удалите его.
 
+### GitHub Actions
+
+Workflow `.github/workflows/build.yml` запускается при каждом push и вручную через **Actions → Build release artifacts → Run workflow**. Windows-runner создаёт portable EXE и установщик, macOS-runner — DMG; готовые файлы находятся в артефактах запуска. Workflow ничего не публикует в Releases автоматически.
+
 ### Пакеты сборки
 
 `requirements-build.txt` — основные пакеты, `requirements-lock.txt` — все пакеты сборки (с зависимостями) с точными версиями и SHA-256 для Windows и macOS. Оба скрипта сборки ставят пакеты только из `requirements-lock.txt` и с проверкой хешей (`pip --require-hashes`). Чтобы обновить пакеты, поменяйте версии в `requirements-build.txt` и пересоберите список ([uv](https://docs.astral.sh/uv/)):
@@ -226,7 +230,7 @@ uv pip compile requirements-build.txt --universal --python-version 3.12 --genera
 
 ### Проверки при сборке
 
-Из Qt в сборку попадает только то, что нужно интерфейсу (список исключений — `DROP` в `RestoreAppStore.spec`). После сборки программа запускается с ключом `--check-ui`: интерфейс загружается без показа окна, и если из Qt вырезано что-то нужное, сборка останавливается. При той же проверке встроенный ipatool сверяется с официальным (`IPATOOL_SHA256` в `restore_gui/apple.py`). На macOS скрипт ещё проверяет встроенный установщик на iPhone, подпись `.app` и что внутри нет битых ссылок.
+Из Qt в сборку попадает только то, что нужно интерфейсу (список исключений — `DROP` в `RestoreAppStore.spec`). После сборки программа запускается с ключом `--check-ui`: интерфейс загружается без показа окна, и если из Qt вырезано что-то нужное, сборка останавливается. При той же проверке встроенный ipatool сверяется с закреплённой сборкой (`IPATOOL_SHA256` в `restore_gui/apple.py`). На macOS скрипт ещё проверяет встроенный установщик на iPhone, подпись `.app` и что внутри нет битых ссылок.
 
 Версия программы задаётся в `restore_apps.py` (`__version__`).
 
