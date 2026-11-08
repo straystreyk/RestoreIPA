@@ -13,6 +13,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+/restore_gui/_build_hash.py
 
 # Служебные файлы программы, если вдруг окажутся рядом
 keychain.pass

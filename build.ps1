@@ -6,8 +6,8 @@
 
 Нужно: Python 3.12 (python.org, winget install Python.Python.3.12 или py install 3.12; другой путь — переменная
 PYTHON), Go, для установщика — Inno Setup 6.
-ipatool собирается из закреплённого официального commit, Unicorn скачивается из официального релиза; исходники и
-результаты сверяются по SHA-256.
+ipatool собирается из закреплённого официального commit, Unicorn скачивается из официального релиза. Исходники и
+Unicorn сверяются по SHA-256; хеш полученного ipatool вшивается в Restore для проверки при запуске.
 #>
 param([switch]$SkipInstaller)
 $ErrorActionPreference = "Stop"
@@ -17,7 +17,6 @@ $IpatoolCommit = "001d889896fcb118546443c5dfe0997d11b74f56"  # PR #643: новы
 $IpatoolVersion = "2.8.0-dev.001d889"
 $IpatoolUrl = "https://github.com/majd/ipatool/archive/$IpatoolCommit.tar.gz"
 $IpatoolSourceSha = "8b61a6925409a2fb669be92d83df6bfae7a8ccfbb03f567fe7ec80240934dd11"
-$IpatoolExeSha = "2d8104e98cf52dc5dde9df3c7a74f28afa28821a606db34239ae2eb2495436ab"
 $GoVersion = "1.26.5"
 $UnicornUrl = "https://github.com/unicorn-engine/unicorn/releases/download/2.1.4/windows-mingw64-shared.7z"
 $UnicornSha = "0960f938e66fa12c448742bddd2a03aa88abeeb2b3cda7156493a2da86228d3a"  # digest ассета в релизе 2.1.4
@@ -105,7 +104,14 @@ try {
 } finally {
     Pop-Location
 }
-Assert-Hash build\res\ipatool.exe $IpatoolExeSha
+$ipatoolExeSha = (Get-FileHash build\res\ipatool.exe -Algorithm SHA256).Hash.ToLower()
+@(
+    "# Создано build.ps1; не редактировать."
+    "IPATOOL_BUILD_SHA256 = {"
+    "    `"win32-amd64`": `"$ipatoolExeSha`","
+    "}"
+) | Set-Content restore_gui\_build_hash.py -Encoding utf8
+Write-Host "SHA-256 ipatool.exe: $ipatoolExeSha"
 Invoke-Native build\res\ipatool.exe --version
 
 Get-Checked $UnicornUrl build\dl\unicorn.7z $UnicornSha

@@ -27,6 +27,16 @@ SESSION_LOST = re.compile(r"failed to get account|keyring|not logged|sign.?in|pa
 SCAN_ROOT = core.DATA_DIR / "scan"
 UNICORN_VERSION = "2.1.4"
 UNICORN_SHA256 = "d8f9a89222ffa74493a1d47090e17f8e1db8ac171a3128c6a76a4ea09de11469"  # как в исходниках ipatool
+SAP_CACHE_NAME = "apple-assets-macos-27-26A434-arm64-v4"
+SAP_ASSET_FILES = (
+    ("AppleMediaServices", 14813888),
+    ("commerce", 8092640),
+    ("adid", 9797952),
+    ("CoreFP", 94842464),
+    ("CoreFP.icxs", 7365344),
+    ("fairplayd", 37689264),
+    ("FairPlayIOKit", 2132320),
+)
 # ipatool 2.8.0-dev из официального commit 001d889 (исправление авторизации #643; build.ps1/build_mac.sh).
 # На macOS — хеш кода без подписи (ipatool_digest): PyInstaller переподписывает программы внутри .app.
 IPATOOL_SHA256 = {
@@ -34,6 +44,12 @@ IPATOOL_SHA256 = {
     "darwin-arm64": "09f1a8121e4b62280db7cbba78493fc9fdf48b9c388a15db3d1b2a8b64801596",
     "darwin-x86_64": "beb2f110379782dd62c8c7d5698559681cd0bd94795bf55dab19d1c43dfaabb5",
 }
+try:
+    # build.ps1/build_mac.sh записывают хеш именно своего результата: CGO-часть macOS может отличаться между SDK.
+    from ._build_hash import IPATOOL_BUILD_SHA256
+except ImportError:  # запуск из исходников до первой сборки
+    IPATOOL_BUILD_SHA256 = {}
+IPATOOL_SHA256.update(IPATOOL_BUILD_SHA256)
 # адреса, без которых не работает вход/скачивание (для «Проверить связь с Apple»)
 APPLE_HOSTS = (
     ("buy.itunes.apple.com", "вход и лицензии"),
@@ -50,8 +66,8 @@ APPLE_HOSTS = (
 def adopt_old_cache():
     """Перенести кэш ipatool версий до 1.1.0 из %LOCALAPPDATA%\\ipatool в папку программы (core.IPATOOL_CACHE).
 
-    Там служебные файлы Apple для входа (их первая загрузка — до 15 минут) и Unicorn, вместе ~60 МБ. Переносятся
-    только эти две папки и только если в папке программы их ещё нет; пустая старая папка удаляется.
+    Там служебные файлы Apple для входа и Unicorn. Переносятся только эти две папки и только если в папке программы
+    их ещё нет; пустая старая папка удаляется. Если версия набора Apple изменилась, ipatool докачает новый рядом.
     """
     if not sys.platform.startswith("win"):
         return False
@@ -173,9 +189,10 @@ def seed_unicorn():
 
 def sap_ready():
     """Скачаны ли уже служебные файлы Apple, нужные ipatool для входа."""
-    d = core.IPATOOL_CACHE / "sap" / "apple-assets-v2"
+    d = core.IPATOOL_CACHE / "sap" / SAP_CACHE_NAME
     try:
-        return d.is_dir() and any(d.iterdir())
+        return d.is_dir() and all((d / name).is_file() and (d / name).stat().st_size == size
+                                  for name, size in SAP_ASSET_FILES)
     except OSError:
         return False
 

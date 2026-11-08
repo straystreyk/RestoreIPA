@@ -541,6 +541,19 @@ class Footprint(unittest.TestCase):
             self.assertTrue(Path(env["HOME"]).is_relative_to(apple.SCAN_ROOT), env["HOME"])
         self.assertEqual(apple.scan_copies(), [])
 
+    def test_sap_ready_requires_complete_current_asset_set(self):
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(core, "IPATOOL_CACHE", Path(d)), \
+                mock.patch.object(apple, "SAP_ASSET_FILES", (("one", 3), ("two", 2))):
+            assets = Path(d) / "sap" / apple.SAP_CACHE_NAME
+            assets.mkdir(parents=True)
+            (assets / "one").write_bytes(b"123")
+            self.assertFalse(apple.sap_ready())
+            (assets / "two").write_bytes(b"x")
+            self.assertFalse(apple.sap_ready())
+            (assets / "two").write_bytes(b"xy")
+            self.assertTrue(apple.sap_ready())
+
     @unittest.skipUnless(sys.platform.startswith("win"), "кэш ipatool в %LOCALAPPDATA% — только на Windows")
     def test_adopt_old_cache(self):
         old = Path(os.environ["LOCALAPPDATA"]) / "ipatool"
@@ -549,7 +562,8 @@ class Footprint(unittest.TestCase):
         (old / "unicorn").mkdir()
         try:
             self.assertTrue(apple.adopt_old_cache())
-            self.assertTrue(apple.sap_ready())
+            self.assertTrue((core.IPATOOL_CACHE / "sap" / "apple-assets-v2" / "a.bin").is_file())
+            self.assertFalse(apple.sap_ready(), "старый набор Apple не должен считаться готовым для новой ipatool")
             self.assertTrue((core.IPATOOL_CACHE / "unicorn").is_dir())
             self.assertFalse(old.exists(), "пустая старая папка осталась")
             (old / "sap").mkdir(parents=True)  # уже перенесено: второй раз не затирает

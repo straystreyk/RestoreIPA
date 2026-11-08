@@ -5,16 +5,14 @@
 #   bash build_mac.sh
 #
 # Нужно: Python 3.12 (python3.12 в PATH или переменная PYTHON), Go и Xcode Command Line Tools
-# (iconutil, codesign, hdiutil). ipatool собирается из закреплённого официального commit; исходный архив и
-# результат сборки сверяются по SHA-256.
+# (iconutil, codesign, hdiutil). ipatool собирается из закреплённого официального commit; исходный архив
+# сверяется по SHA-256, а хеш полученного бинарника вшивается в Restore для проверки при запуске.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 IPATOOL_COMMIT="001d889896fcb118546443c5dfe0997d11b74f56"  # PR #643: новый native auth + Store AMD proofs
 IPATOOL_VERSION="2.8.0-dev.001d889"
 IPATOOL_SOURCE_SHA="8b61a6925409a2fb669be92d83df6bfae7a8ccfbb03f567fe7ec80240934dd11"
-IPATOOL_BIN_SHA_arm64="9410bfe8bec66cbf3bf46402c4e0a53b3024a06278fe02ba1eeafdd313ad16f6"
-IPATOOL_BIN_SHA_amd64="8fe826175b27667058b8e31f72b5aefaf8fd224003f59efb9554fd406b26515b"
 GO_VERSION="1.26.5"
 
 PYTHON="${PYTHON:-python3.12}"
@@ -73,12 +71,12 @@ echo "Собираю ipatool $IPATOOL_VERSION ($IPA_ARCH)"
         go build -buildvcs=false -trimpath \
         -ldflags="-X=github.com/majd/ipatool/v2/cmd.version=$IPATOOL_VERSION" -o ../../res/ipatool .
 )
-BIN_SHA_VAR="IPATOOL_BIN_SHA_$IPA_ARCH"
-GOT="$(shasum -a 256 build/res/ipatool | cut -d' ' -f1)"
-if [ "$GOT" != "${!BIN_SHA_VAR}" ]; then
-    echo "SHA-256 собранного ipatool не совпал"$'\n'"  ожидался ${!BIN_SHA_VAR}"$'\n'"  получен  $GOT" >&2
-    exit 1
-fi
+# Хеш кода вшивается в конкретную сборку Restore. Это сохраняет проверку целостности после подписи .app и не
+# привязывает CGO-бинарник к версии Xcode/SDK на машине сборки.
+CODE_SHA="$("$PY" -c 'from restore_gui.apple import macho_code_sha256; print(macho_code_sha256("build/res/ipatool"))')"
+printf '%s\n' '# Создано build_mac.sh; не редактировать.' 'IPATOOL_BUILD_SHA256 = {' \
+    "    \"darwin-$ARCH\": \"$CODE_SHA\"," '}' > restore_gui/_build_hash.py
+echo "SHA-256 кода ipatool: $CODE_SHA"
 build/res/ipatool --version
 
 # --- иконка .icns из того же рисунка, что и icon.ico (installer/make_art.py) ---
